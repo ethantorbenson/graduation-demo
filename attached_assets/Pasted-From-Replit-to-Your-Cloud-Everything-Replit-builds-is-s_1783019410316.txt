@@ -1,0 +1,116 @@
+From Replit to Your Cloud
+Everything Replit builds is standard, portable code with full Git history. You can securely host production applications directly on Replit, but some teams prefer using their own cloud infrastructure through their existing CI/CD pipeline. This guide covers how that graduation process works.
+
+How it works
+1
+Build
+Your teams build apps in Replit using natural language or code. Behind the scenes, apps run on a full Linux environment which allows it to run with the languages, frameworks, and dependencies your engineers already use. Agent makes real Git commits as it works, so every change is tracked from the start.
+
+2
+Review
+Before code leaves Replit, it goes through review:
+
+Quality assurance: Agent includes built-in code optimization and app testing capabilities. When Code Optimizations is enabled, Agent reviews and simplifies its own code after each task. With App Testing, Agent launches a real browser, navigates your application like a user, validates functionality across UI elements, forms, and integrations, and automatically fixes issues it finds. These run during development, so by the time code reaches your CI/CD pipeline, it's already been through multiple rounds of self-correction.
+Security scanning: Replit includes a built-in security scanner that checks for vulnerabilities, exposed secrets, outdated dependencies, and potential leaks of sensitive data. Enterprise admins can require scans to pass before code is allowed to be published or pushed to Git.
+Functional review: Teams collaborate through Replit's shared task board, where each task runs in an isolated copy of the project. When a task is complete, it moves to "Ready" and a team lead or reviewer can inspect the changes before applying them to the main version. For organizations that require formal pull request reviews, Replit's Git integration supports pushing to branches and opening PRs through the GitHub or GitLab CLI directly from the workspace so your existing code review process applies before code is merged.
+Admin controls: Enterprise admins can require a Git remote before publishing, restrict to private repos only, and whitelist specific Git organizations. This ensures code can only go to your approved repositories.
+SBOM export: Generate Software Bill of Materials in standard formats for compliance and supply chain transparency. SBOMs can be exported for individual apps or across your entire organization, giving your security and compliance teams full visibility into dependencies before code leaves Replit.
+3
+Graduate
+This is where code moves from Replit into your environment:
+
+Connect to your Git provider. Replit natively connects to GitHub, GitLab, or Bitbucket. Your enterprise admin controls which providers and organizations are allowed. Code pushes can happen continuously (every Agent change is committed to Git), and Replit users can push to the remote repository on-demand.
+
+Your CI/CD pipeline takes over. Once code lands in your repository, your existing pipeline handles everything from there — your security scans, your build step, your test suites, your promotion flow. Replit doesn't need to be involved in any of this.
+
+Database migration. If the app uses Replit's built-in PostgreSQL during development, you can export the schema and data using standard PostgreSQL tooling (e.g., pg_dump) from Replit's shell, then restore into your own managed database. This is the same process your DBAs would use for any PostgreSQL migration, and no proprietary export format or special tooling is involved. For detailed steps, refer to your PostgreSQL provider's import documentation.
+
+Secrets. Production credentials should be provisioned fresh in your own secrets manager. Replit's secrets are for development only, and Agent is instructed to prompt users to store credentials in the encrypted secrets manager
+
+4
+Operate
+If you graduate the app to your own infrastructure, the production app runs entirely there; Replit doesn't need to be involved. Your existing monitoring, alerting, and incident response applies as normal.
+
+Apps can also stay hosted on Replit if that's a better fit for the use case. Many organizations keep all of their deployments on Replit, internal and customer-facing alike. Others graduate specific apps to their own cloud while keeping the rest on Replit. It's your choice, and you can mix and match.
+
+To iterate, the cycle simply repeats: make updates in Replit → push via Git → your CI/CD deploys.
+
+What the code looks like
+By default, Git pushes uncompiled source code, with the file tree appearing exactly as it does in Replit. This is not a compiled build artifact. Your pipeline handles the build and compile step, same as it would for code written by any engineer on your team.
+
+If you'd prefer Agent to compile code, generate a Dockerfile, or produce other build artifacts before pushing, that's configurable through Agent Skills. Agent generates these files within Replit; the actual Docker image build happens in your CI/CD pipeline.
+
+What goes with the code vs. what stays in Replit:
+
+Travels with the code	Stays in Replit (handle separately)
+All source files	Replit's hosting environment
+Package manifests (package.json, requirements.txt, etc.)	Dev database contents (export separately)
+Configuration files	Development secrets (re-provision in your env)
+Full Git history	Replit Auth (replace with your auth provider)
+Agent-generated files (Dockerfiles, scripts, CI configs)	Replit domains
+.replit and replit.nix config files (Replit-specific, can be safely ignored or removed by your pipeline)	
+Configuration files
+Your Git repository will include .replit and replit.nix files that configure the Replit development environment. These are Replit-specific and have no effect outside of Replit; your CI/CD pipeline can safely ignore or exclude them. They don't conflict with standard build tooling (Dockerfiles, Makefiles, CI configs) that Agent generates for your pipeline. If you prefer a clean repository, an Agent Skill can be configured to remove these files before pushing, or your .gitignore / pipeline can simply skip them.
+
+Connecting to your data during development
+While building in Replit, apps often need to connect to your existing data services: databases, data warehouses, APIs, and more. Here's how that works:
+
+Direct integrations. Replit has first-party connectors for Databricks, BigQuery, and Snowflake. These are OAuth-based and scoped to what your enterprise admin allows. The queries and data logic Agent writes are fully portable; when the app graduates, you just point it at your own production credentials. Note: Databricks also supports service account (M2M) authentication.
+
+Any external service. Replit apps can connect to any externally accessible service over HTTPS/TLS. With a single-tenant deployment, you get static outbound IPs from Replit that can be allowlisted on your security groups, database instances, or network policies.
+
+Recommended practices for secure connectivity:
+
+Use a dedicated, least-privilege service account scoped to dev/staging resources only. Production credentials shouldn't touch Replit.
+Consider putting an API gateway in front of internal resources — Replit sees only endpoints, never your internal network. This gives you rate limiting, firewall rules, and a single revocation point.
+Use synthetic or sample data during development when possible. Real production data stays in your environment.
+All connections use HTTPS/TLS. Everything is auditable through your cloud provider's logging (e.g., CloudTrail) and Replit's enterprise audit logs.
+Database flexibility. By default, Replit provisions a built-in PostgreSQL database if the user doesn't specify one. But through Agent Skills, you can tell Agent to use your preferred database, including a managed PostgreSQL instance, a NoSQL service, a caching layer, or whatever your stack requires. Agent can follow whatever database schema and connection patterns you configure.
+
+Using Agent Skills to prepare code for your pipeline
+This is one of the most powerful features for organizations that want a smooth graduation process. Agent Skills are custom instructions (written as simple Markdown files) that teach Agent how to work with your specific environment. For graduation, a skill teaches Agent your deployment target, pipeline structure, and coding conventions.
+
+Every organization's pipeline is different. Maybe you need a multi-stage Dockerfile. Maybe your CI expects a specific branch naming convention. Maybe your security team requires certain headers or logging patterns in production code. Rather than documenting all of this and hoping developers follow it, you encode it into a skill and then anyone on your team can simply tell Agent "get this ready for production," and it handles the rest.
+
+What a graduation skill might include:
+
+Run a security scan and stop if critical issues are found
+Generate a production-optimized Dockerfile
+Generate a CI/CD workflow file for your pipeline
+Replace any Replit-specific services with environment variable placeholders
+Restructure code to match your production project layout
+Export the database schema
+Document all required environment variables and secrets
+Commit to a release branch and push to your Git organization
+You can build graduation skills yourself or work with Replit's field engineering team during onboarding or a proof of concept. Once a skill is in place, any user in your workspace can ask Agent to help them get their application ready for graduation. The process becomes repeatable and consistent across your entire organization.
+
+Enterprise admin controls
+These are the governance levers your admin and security teams can configure at the organization level:
+
+Require Git remote before publishing: Every app must have a Git connection. Nothing gets built in isolation.
+Restrict to private repositories only: Code never hits public repos.
+Whitelist Git organizations: Code can only go to your approved Git orgs.
+Disable source code export: Turn off ZIP downloads entirely. Git becomes the only path for code to leave Replit.
+Require security scan before publishing: Code must pass the security scanner before it can be published or pushed.
+Restrict Git providers: Limit to only the Git providers your organization uses.
+Control publishing visibility: Set whether apps can be published publicly, to the workspace only, or restricted further.
+All of these are enforced org-wide and can't be overridden by individual users.
+
+Cloud-specific deployment paths
+The graduation workflow adapts to whichever cloud and CI/CD tooling you use. Here are common patterns:
+
+AWS
+Replit → GitHub → GitHub Actions (or CodePipeline) → ECR → ECS Fargate / EKS / Lambda
+Agent can pre-generate Dockerfiles, GitHub Actions workflows, and ECS task definitions. Once the image is in ECR, deploy to Fargate for containerized web apps, EKS if you run Kubernetes, or Lambda for event-driven workloads. Database exports go to RDS or Aurora. Secrets get re-provisioned in AWS Secrets Manager or Parameter Store.
+
+Azure
+Replit → GitHub → Azure Pipelines → ACR → Azure App Service / AKS
+Agent can generate Azure-specific deployment configs. Push container images to Azure Container Registry and deploy to App Service or AKS. Replit also supports Azure-managed deployment environments for teams that want a more integrated path.
+
+GCP
+Replit → GitHub → Cloud Build → Artifact Registry → Cloud Run / GKE
+Agent can generate Cloud Build configs, push to Artifact Registry, and deploy to Cloud Run (serverless containers) or GKE. Replit's infrastructure runs on GCP, so networking between Replit and GCP services during development is straightforward.
+
+Any CI/CD platform
+The pattern is the same regardless of your tooling — Jenkins, CircleCI, GitLab CI, Buildkite, or anything else. Code lands in Git, your pipeline picks it up. Replit produces standard code that any build system can handle.
+

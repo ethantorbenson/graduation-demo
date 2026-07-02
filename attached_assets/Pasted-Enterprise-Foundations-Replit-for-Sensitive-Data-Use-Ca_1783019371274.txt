@@ -1,0 +1,45 @@
+Enterprise Foundations
+Replit for Sensitive Data Use Cases
+How to build applications that handle sensitive data using industry-standard practices: build against schemas and dummy data in Replit, connect to real data only in staging and production under your existing safeguards.
+
+Enterprise
+~5 min
+In regulated organizations, teams need to build applications that ultimately handle sensitive data (PHI, PII, financial records, confidential documents), but the development process itself must never touch that data. This is standard practice across regulated industries. For example, healthcare developers work against synthetic patient records, financial services teams use anonymized datasets, and legal teams store confidential contracts separately from software development and staging environments.
+
+Replit fits into this model by acting as your development environment, while your cloud handles staging and production. Your teams will build against schemas and dummy data in the development environment, and you will connect applications to real data only in your owned and siloed staging and production layers.
+
+The three-environment model
+The structure follows the same separation that regulated engineering teams already use, with one important difference: Replit handles the development layer, and your cloud handles staging and production.
+
+Development (Replit). Your team provides the database schema: table structures, field names, relationships, and data types, without any real records. The agent builds the application logic, queries, and interface against that schema. If you want realistic test data, you generate synthetic records that match the shape of your real data but contain no actual sensitive information. Development credentials are scoped to the Replit environment and point to empty-schema or synthetic-data instances. At this stage, the application is functionally complete but has never seen real data.
+
+Staging (your cloud). When the application is ready, it graduates through your Git and CI/CD pipeline into a staging environment in your own cloud. This is where you swap the dummy data for real data connections. Your team provisions staging database credentials in your secrets manager, points the application at a staging instance of your production database (or a sanitized copy), and validates that the application behaves correctly against real schemas and data volumes.
+
+Production (your cloud). Once validated in staging, the application promotes to production through your normal promotion flow. Production database credentials, encryption keys, and API keys for sensitive services are provisioned in your secrets manager. Real data flows only through infrastructure you control, with your existing compliance monitoring, access controls, and incident response in place.
+
+At every stage, the separation is explicit: Replit handles development with no sensitive data, and your cloud handles staging and production with full data governance.
+
+Build against the schema, not the data
+This phrase captures the core principle. Your team exports the database schema (tables, fields, relationships, constraints) without any records and brings it to Replit. The agent builds the complete application: forms, validation logic, database queries, role-based access, dashboards, and integrations. Every query is written against the real schema structure, so when the application connects to a real database instance in staging, the queries work without modification.
+
+If your team wants to test with realistic data during development, they generate synthetic records that match the schema's shape. A patient intake portal can be built and tested with dummy patient names, synthetic insurance IDs, and placeholder referral codes. The application logic is identical whether it processes synthetic data in development or real data in production.
+
+What lives where
+In the development environment (Replit)	In your staging and production environment (your cloud)
+Application code and logic	Real sensitive data (PHI, PII, financial records)
+Database schema (structure only)	Production and staging database credentials
+Synthetic or dummy test data	Encryption keys and certificates
+Development-scoped API credentials	Audit logging and compliance monitoring
+Git history and agent-generated artifacts	Access controls and network policies
+What the platform provides for regulated environments
+Several platform capabilities support this model. On the enterprise plan, prompts, code context, and conversations are not stored or used for model training by any model provider, which means zero data retention for the inputs your teams provide. The platform is SOC 2 Type 2 compliant, with the audit report available to your security and compliance teams on request. Users authenticate through your identity provider via SSO and SCIM, with automatic deprovisioning, so no one accesses the platform through a personal email or unmanaged account. Code flows through your Git provider, restricted to whitelisted organizations and private repositories only, with your pipeline handling everything after the push. For development that connects to staging databases behind your network during the build phase, a single-tenant deployment option provides static outbound IPs that can be allowlisted on your security groups.
+
+These capabilities are supporting infrastructure for the development model. The fundamental protection is architectural: sensitive data never enters the development environment regardless of what platform security features exist.
+
+How this works in practice
+A major healthcare diagnostics company adopted this model to build patient-facing applications on Replit. The development team provided database schemas (patient demographics, appointment types, insurance fields, referral codes) without any real patient records. The agent built the application, the team iterated using synthetic data, and the finished application graduated through the company's CI/CD pipeline to their health cloud. PHI connections were established only at the production layer, behind the company's existing access controls, encryption, and HIPAA-compliant infrastructure. No PHI was ever uploaded to or connected from the development environment.
+
+The same pattern applies across regulated industries. In financial services, customer account data stays in the production database behind the company's VPC, and developers build against the account schema with synthetic balances and transaction histories. In legal, confidential contract text stays in the document management system, and developers build contract review tools against schema definitions and sample documents. In insurance, claims data stays in the regulated data warehouse, and developers build claims processing interfaces against the claims schema with synthetic records.
+
+Starting with non-sensitive use cases
+Many organizations begin by building tools that do not touch sensitive data at all: internal dashboards, operational workflows, reporting tools, or team utilities. This lets teams learn the platform, establish governance practices, and build confidence before expanding to sensitive-data applications. This progression is natural. Once the development model is established (schema-only development, Git-native graduation, secrets management in your cloud), applying it to sensitive data use cases follows the same process with the same controls.

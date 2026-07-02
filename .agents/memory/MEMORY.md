@@ -1,0 +1,1 @@
+- [GitHub OAuth push cannot write workflow files](github-oauth-workflow-scope.md) — Replit's GitHub connector token has no `workflow` scope; pushing commits that touch `.github/workflows/*` is rejected.

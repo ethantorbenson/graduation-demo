@@ -1,0 +1,13 @@
+{
+  "name": "graduation-demo-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A tiny zero-dependency web app that displays its own deploy metadata, used to demonstrate the Replit -> GitHub -> Docker graduation flow.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

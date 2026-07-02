@@ -1,0 +1,56 @@
+The Production Handoff
+How code moves from Replit to your cloud infrastructure through standard Git workflows, with database migration, secrets provisioning, and cloud-specific deployment paths.
+
+Enterprise
+~5 min
+This lesson assumes your organization has already evaluated and approved Replit as a development platform. It covers the mechanics of moving an application to your own cloud. For the evaluation itself (governance, compliance, security posture, and pipeline fit), see Lesson 7.
+
+Some teams host production applications directly on Replit. Others prefer to run production on their own cloud infrastructure through their existing CI/CD pipeline. Both paths are fully supported, and many organizations use a mix depending on the application. What follows is the graduation path: the step-by-step process of moving an application from Replit to your cloud.
+
+The graduation lifecycle
+The process follows four stages.
+
+Build. Your teams build in Replit using natural language or code. The agent makes real Git commits as it works, so the full history of every change is preserved from the first prompt. During development, applications use the built-in PostgreSQL database, and secrets are stored in the platform's encrypted secrets manager and referenced as environment variables in code (never hardcoded).
+
+Review. Before code leaves the platform, it goes through several checks. The security scanner identifies vulnerabilities, exposed secrets, outdated dependencies, and potential leaks of sensitive data. If the scan fails, the agent stops, surfaces the specific findings, and blocks the push until the issues are resolved. Automated application testing launches a real browser, navigates the application like a user, and validates functionality across UI elements, forms, and integrations. The shared task board lets team leads inspect changes and approve or reject them before merging to the main branch.
+
+Graduate. This is where the application moves to your environment. The agent generates deployment artifacts for your target cloud: Dockerfiles (multi-stage, production-optimized), CI/CD workflow files for your specific platform, and cloud-specific configuration such as ECS task definitions or Cloud Run configs. It also generates an environment variable manifest listing every secret and credential the application requires, so your ops team knows exactly what to provision. Code pushes to your Git provider on a branch, and your existing PR, review, and merge process applies from there.
+
+Operate. Once in your cloud, your existing operational model applies, including monitoring, alerting, patching, and on-call rotation. Replit is no longer involved in the production path. Ongoing development can continue in Replit, with changes pushing via Git and your CI/CD deploying as usual.
+
+What travels with the code
+All source files, package manifests, configuration files, the full Git history, and any agent-generated build artifacts (Dockerfiles, CI workflow files, cloud-specific configs) travel with the code. The output is standard, uncompiled source code with no proprietary format and no custom runtime dependency. Your pipeline handles the build and compile step the same way it would for code written by any engineer on your team.
+
+What requires separate handling: the development database contents (exported separately), development secrets (provisioned fresh in your secrets manager), and platform-specific hosting and authentication (replaced by your cloud's equivalents). Everything your pipeline needs to build and deploy the application is in the repository, and everything environment-specific is handled through your existing provisioning process.
+
+Database migration
+If the application uses the built-in PostgreSQL database during development, you export the schema and data using standard PostgreSQL tooling (such as pg_dump) from the platform's shell, then restore into your own managed database instance. The export captures the final schema and data state, not the incremental migration history, so your DBAs receive a clean snapshot regardless of how many schema changes occurred during development.
+
+This is the same process your team would use for any PostgreSQL migration. No proprietary export format or special tooling is required. The queries and data logic the agent writes are fully portable: update the connection string to point at your managed instance, and the application connects without code changes.
+
+If the database export encounters an issue (an unsupported extension, a large binary column, or a schema feature specific to the platform's PostgreSQL version), the agent surfaces the specific incompatibility and suggests a resolution. In practice, development databases are small and schema-simple, so these edge cases are rare, but the tooling handles them explicitly rather than failing silently.
+
+Secrets and credentials
+Production credentials should be provisioned fresh in your own secrets manager. Development secrets are stored in the platform's encrypted secrets manager and are scoped to the development environment only. The agent references secrets as environment variables in code, never as hardcoded values, so by the time code reaches your repository, every credential is a variable reference that your deployment process populates.
+
+To streamline provisioning, the agent generates an environment variable manifest listing every secret and credential the application requires, with descriptions of what each one is for. Your ops team can use this manifest to provision the correct values in your secrets manager (AWS Secrets Manager, Parameter Store, Azure Key Vault, or whatever you use) without needing to trace through the application code.
+
+Cloud-specific deployment paths
+The graduation workflow adapts to whichever cloud and CI/CD tooling you use:
+
+AWS. Code flows from Git to GitHub Actions (or CodePipeline) to ECR and deploys to ECS Fargate, EKS, or Lambda. The agent can pre-generate Dockerfiles, GitHub Actions workflows, and ECS task definitions. Database exports go to RDS or Aurora, and secrets are provisioned in AWS Secrets Manager or Parameter Store.
+
+Azure. Code flows through Azure Pipelines to Azure Container Registry and deploys to Azure App Service or AKS. The platform also supports Azure-managed deployment environments for teams that want a more integrated path.
+
+GCP. Code flows through Cloud Build to Artifact Registry and deploys to Cloud Run or GKE. The agent can generate Cloud Build configs for serverless containers or Kubernetes deployments.
+
+Any CI/CD platform. The pattern is the same regardless of tooling, whether Jenkins, CircleCI, GitLab CI, Buildkite, or anything else. Code lands in Git, your pipeline picks it up, and the build system handles it like code from any other source.
+
+Ongoing iteration after graduation
+Graduation is not a one-time event. The development cycle repeats: make updates in Replit, push via Git, your CI/CD deploys. The agent works against the development environment and does not have direct access to your production database schema, cloud-specific configuration, or the secrets provisioned in your cloud. When changes require awareness of the production environment (a schema migration, a new secret, or a configuration change), your team handles those through your normal deployment process, informed by the agent's updated environment variable manifest and schema exports.
+
+Late graduation
+A common scenario: a business user builds an internal tool, deploys it on Replit, it gains traction, and six months later the infrastructure team wants to bring it into managed infrastructure. The graduation process is the same regardless of when it happens. The full Git history is preserved from the original build, the database can be exported at any point, and a graduation skill generates the same deployment artifacts whether the application is one day old or one year old. The only additional consideration is that a long-running application may have accumulated more data in its database, which means the pg_dump export may take longer.
+
+Making graduation repeatable
+For organizations that want a consistent graduation process across teams, a graduation skill encodes your specific pipeline requirements into a persistent instruction set that the agent follows automatically. The infrastructure or platform team writes the skill once, and any user in the workspace can ask the agent to prepare an application for production using it. The skill handles the steps that would otherwise be a manual checklist: running the security scan, generating the Dockerfile, creating CI workflow files, replacing platform-specific services with environment variable placeholders, restructuring code to match your production layout, exporting the database schema, and generating the environment variable manifest. For teams that standardize on GitHub Actions and deploy to their own infrastructure, the final lesson in this course, Making Graduation Repeatable with GitHub Actions, shows an alternate path where a fixed reusable workflow provisions databases and applies migrations automatically rather than handing a snapshot and manifest to an operations team.

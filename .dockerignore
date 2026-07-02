@@ -1,0 +1,9 @@
+# Only the demo-app is needed to build the image; ignore everything else so the
+# build context stays tiny and fast.
+*
+!demo-app
+!demo-app/**
+demo-app/node_modules
+**/*.log
+.git
+.github

@@ -1,0 +1,104 @@
+Enterprise Foundations
+Making Graduation Repeatable with GitHub Actions
+A worked example of repeatable graduation: a fixed reusable GitHub Actions workflow and an agent skill that let non-technical builders deploy applications to company-controlled infrastructure without per-app engineering.
+
+Enterprise
+~6 min
+Lesson 8 described the production handoff in general terms, where the agent generates deployment artifacts and an operations team provisions the database and secrets. This lesson covers a more automated path, for teams that standardize on GitHub Actions and require their applications to run on company-controlled infrastructure and databases rather than on Replit's native Deployments. The goal is to keep engineers out of the critical path of everyday app building, so that adding an application or a builder does not add engineering work. Engineering configures shared infrastructure once, and from that point a builder ships by asking the agent to prepare the application and pushing to the main branch.
+
+The design rests on one principle: the deployment pipeline is fixed and owned by engineering, and the only thing that varies per application is a small file that an agent skill writes. A reusable GitHub Actions workflow holds all the deployment logic and is identical for every application. Each application carries a short file that calls it. Because the reusable workflow cannot be edited from inside an application, builders cannot alter the pipeline, and engineering retains control of how every release is built and shipped.
+
+The recommended stack
+Standardizing the stack is what makes a single fixed workflow possible. Applications the agent builds default to a TypeScript and Node runtime with a PostgreSQL database, and Drizzle as the schema and migration layer. When every application follows this convention, one migration step, drizzle-kit migrate, applies to all of them, and the reusable workflow needs no per-application branching to handle migrations. Teams can support additional stacks, but each additional convention adds a corresponding path to the workflow, so most organizations standardize on one.
+
+The fixed reusable workflow
+Engineering writes this once in the organization's central repository. It accepts typed inputs and contains the deployment logic that every application runs at release:
+
+Authenticate to your cloud using short-lived credentials.
+Build and publish a container image labeled with the commit.
+Prepare the application's data layer according to its inputs.
+Release the new version.
+The inputs are the only way an application influences what the workflow does:
+
+app_name names the image, the database, and the deployed service.
+data_source selects how the data layer is prepared: provision, connector, or none.
+connector_name names an approved data source when data_source is connector.
+
+# .github/workflows/deploy-reusable.yml  (in the org's central repo)
+on:
+  workflow_call:
+    inputs:
+      app_name:
+        required: true
+        type: string
+      data_source:
+        required: false
+        type: string
+        default: provision
+      connector_name:
+        required: false
+        type: string
+        default: ""
+permissions:
+  contents: read
+  id-token: write            # exchange for short-lived cloud credentials
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm ci
+      - name: Authenticate to cloud (OIDC)
+        run: |
+          echo "Use your cloud's login action with the org's workload identity."
+      - name: Build and publish image
+        run: |
+          echo "docker build and push, tagged with ${{ github.sha }}"
+      - name: Provision database
+        if: ${{ inputs.data_source == 'provision' }}
+        env:
+          ADMIN_DB_URL: ${{ secrets.SHARED_PG_ADMIN_URL }}
+        run: |
+          # Create the app's database and least-privilege role if absent,
+          # using ADMIN_DB_URL, then assemble the scoped connection string.
+          APP_DATABASE_URL="$(./scripts/ensure-database.sh "${{ inputs.app_name }}")"
+          echo "::add-mask::$APP_DATABASE_URL"
+          echo "DATABASE_URL=$APP_DATABASE_URL" >> "$GITHUB_ENV"
+      - name: Apply migrations
+        if: ${{ inputs.data_source == 'provision' }}
+        run: npx drizzle-kit migrate
+      - name: Deploy
+        run: |
+          echo "Release ${{ inputs.app_name }} to your cloud."
+What the skill decides
+The platform or infrastructure team writes one agent skill that encodes these choices. A builder never sets an input or opens a workflow file. They ask the agent to prepare the application for deployment, for example by saying "get this ready for deploy via GitHub," and the skill performs the per-application work:
+
+Determine the data source the application uses.
+Confirm migrations follow the Drizzle convention.
+Write the calling workflow file with the matching inputs.
+Commit it so the next push to the main branch deploys.
+
+# .github/workflows/deploy.yml  (written into each app by the skill)
+name: Deploy
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  deploy:
+    uses: your-org/.github/.github/workflows/deploy-reusable.yml@main
+    with:
+      app_name: vendor-intake
+      data_source: provision
+    secrets: inherit
+Handling different data sources
+The data_source input covers the cases an application falls into. An application that uses the database Replit provisions in development sets provision, and the workflow creates a database for it on the shared server if one does not exist, applies migrations, and gives the running application a least-privilege credential scoped to that database. An application that reads from a source the organization has already approved sets connector with the name of that source, and the workflow maps the name to a specific organization secret from a fixed allowlist. The workflow never accepts a raw connection string from an application, so a builder cannot point a deployment at an unapproved system. An application with no database sets none.
+
+Where the automation boundary sits
+How much a release automates depends on what the skill and the workflow are allowed to do. Because migrations run inside the workflow, a routine release that adds a column or a table deploys itself with no engineering involvement, which reaches further than a manual handoff does. What remains with engineering is the shared infrastructure and the allowlists the automation draws on. Adding a new organization secret, approving a new external connector, or extending the shared server's capacity is a deliberate change to the fixed parts of the system, and the team makes it once for everyone rather than once per application.
